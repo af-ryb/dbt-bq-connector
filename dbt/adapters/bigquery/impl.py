@@ -28,11 +28,19 @@ import google.oauth2
 import google.cloud.exceptions
 import google.cloud.bigquery
 
-from google.cloud.bigquery import AccessEntry, SchemaField
+from google.cloud.bigquery import AccessEntry, SchemaField, Client
+from google.cloud.bigquery.job import QueryJobConfig
+from google.cloud.bigquery.query import ScalarQueryParameter
+from google.cloud.bigquery.table import TimePartitioning
 
 import time
 import agate
 import json
+
+from concurrent.futures import ThreadPoolExecutor as PoolExecutor
+from datetime import date
+from uuid import uuid4
+from pandas import date_range
 
 logger = AdapterLogger("BigQuery")
 
@@ -604,9 +612,10 @@ class BigQueryAdapter(BaseAdapter):
         conn.handle.update_table(new_table, ["schema"])
 
     @available.parse_none
-    def update_table_description(
-        self, database: str, schema: str, identifier: str, description: str
-    ):
+    def update_table_description(self, database: str, schema: str, identifier: str, description: str = None):
+        if not description:
+            return
+        
         conn = self.connections.get_thread_connection()
         client = conn.handle
 
@@ -876,6 +885,180 @@ class BigQueryAdapter(BaseAdapter):
             code=code,
             bytes_processed=bytes_processed,
         )
+
+    # adding as new functions in version 1.2.0m
+    def delete_partitions(self, dataset_name, table_name,
+                          start_date: date = None, end_date: date = None,
+                          dates_to_drop: list = None):
+        """async deletion partitions in bq table
+        If dates_to_drop drop partitions from it
+        in other case drop partitions in range of start_date and end_date
+
+        """
+        conn = self.connections.get_thread_connection()
+        client: Client = conn.handle
+
+        def drop(dateint):
+            """ delete partitions func """
+            client.delete_table(f'{dataset_name}.{table_name}${dateint}', not_found_ok=True)
+
+        def send_multi_req(d_list):
+            try:
+                with PoolExecutor(max_workers=10) as executor:
+                    for _ in executor.map(drop, d_list):
+                        pass
+
+                logger.debug(f'Delete partitions in  {dataset_name}.{table_name} for {min(d_list)} - {max(d_list)}')
+            except Exception as e:
+                logger.error(f'Error while delete partitions in table {dataset_name}.{table_name}, {e}')
+
+        try:
+            tab = client.get_table(f'{dataset_name}.{table_name}')
+        except google.cloud.exceptions.NotFound:
+            tab = None
+
+        if tab:
+            partitioning_type = tab.time_partitioning.type_
+            if partitioning_type == '':
+                return
+
+            # TODO, add support range partitions
+            freq = "MS" if partitioning_type == 'MONTH' else "d"
+            freq_format = '%Y%m' if partitioning_type == 'MONTH' else '%Y%m%d'
+
+            dates_to_drop = [d.strftime(freq_format) for d in dates_to_drop] if dates_to_drop \
+                else [d.date().strftime(freq_format) for d in
+                      date_range(start_date.replace(day=1) if partitioning_type == 'MONTH' else start_date,
+                                 end_date, freq=freq).to_list()
+                      ]
+
+            dates_list = list_intersection(dates_to_drop,
+                                           self.connections.list_table_partitions(schema=dataset_name,
+                                                                                  identifier=table_name))
+
+            if len(dates_list) > 0:
+                send_multi_req(dates_list)
+
+    @classmethod
+    def poll_job(cls, job, timeout):
+        retry_count = timeout
+
+        while retry_count > 0 and job.state != "DONE":
+            retry_count -= 1
+            time.sleep(1)
+            job.reload()
+
+        if job.state != "DONE":
+            raise dbt.exceptions.RuntimeException("BigQuery Timeout Exceeded")
+
+    @available
+    def run_query(self, query: str,
+                  dataset_name: str, table_name: str,
+                  start_date: date = None, end_date: date = None,
+                  write: str = None,
+                  partition_by: Union[PartitionConfig, None] = None,
+                  clusters: Union[list, None] = None,
+                  dry_run: bool = False,
+                  job_id: str = None
+                  ):
+        """Run query from provided configuration
+        Args:
+            query: query,
+            dataset_name: dataset destination,
+            table_name: table destination
+            start_date: date from which will be deleted partitions in table for update,
+            end_date: date to which will be deleted partitions in table for update,
+            write: WRITE_APPEND or WRITE_TRUNCATE
+            dry_run: if True run as test
+            partition_by: config for partitions,
+            clusters: list with fields name
+            job_id: Optional job_id used for bigquery job_id
+            """
+        conn = self.connections.get_thread_connection()
+        client: Client = conn.handle
+
+        write = write if write else 'WRITE_TRUNCATE'
+        job_data = build_query_config(project_id=client.project,
+                                      dataset_name=dataset_name,
+                                      table_name=table_name,
+                                      write=write,
+                                      partitions_field=partition_by.field if partition_by else None,
+                                      partitions_type=partition_by.granularity.upper() if partition_by else None,
+                                      clusters=clusters,
+                                      start_date=start_date, end_date=end_date,
+                                      dry_run=dry_run
+                                      )
+
+        if dry_run:
+            try:
+                job = client.query(query=query,  job_config=job_data)
+                if job.errors:
+                    message = "\n".join(error["message"].strip() for error in job.errors)
+            except Exception as e:
+                return PartitionsModelResp(job_id=job_id, success=False, start_date=start_date, end_date=end_date,
+                                           error=str(e))
+            return PartitionsModelResp(job_id=job_id, success=True, start_date=start_date, end_date=end_date)
+
+        if start_date and end_date and (write == 'WRITE_TRUNCATE' and dry_run is False and partition_by):
+            self.delete_partitions(dataset_name=dataset_name,
+                                   table_name=table_name,
+                                   start_date=start_date, end_date=end_date
+                                   )
+
+        job_id = job_id if job_id else 'dbt_' + str(uuid4())
+        timeout = self.connections.get_job_execution_timeout_seconds(conn) or 300
+
+        with self.connections.exception_handler(query):
+            logger.debug(f'job_id is {job_id}, timeout is {timeout}')
+            job = client.query(query=query, job_config=job_data, job_id=job_id)
+
+            self.poll_job(job, timeout)
+
+            if job.errors:
+                message = "\n".join(error["message"].strip() for error in job.errors)
+
+            return PartitionsModelResp(job_id=job_id,
+                                       success=False if job.errors else True,
+                                       start_date=start_date,
+                                       end_date=end_date,
+                                       error=message if job.errors else None
+                                       )
+
+
+def list_intersection(lst1, lst2):
+    lst = [value for value in lst1 if value in lst2]
+    return lst
+
+
+def build_query_config(project_id, dataset_name, table_name, write,
+                       partitions_field, partitions_type, clusters,
+                       start_date, end_date, dry_run):
+
+    job_data = QueryJobConfig()
+    job_data.write_disposition = write
+    job_data.destination = f'{project_id}.{dataset_name}.{table_name}'
+    job_data.dry_run = dry_run
+
+    if partitions_field:
+        job_data.time_partitioning = TimePartitioning(type_=partitions_type, field=partitions_field)
+        job_data.clustering_fields = clusters
+
+        if start_date and end_date:
+            job_data.query_parameters = [
+                ScalarQueryParameter(type_='DATE', name='start_date', value=format(start_date)),
+                ScalarQueryParameter(type_='DATE', name='end_date', value=format(end_date)),
+            ]
+
+    return job_data
+
+
+@dataclass
+class PartitionsModelResp(dbtClassMixin):
+    success: bool
+    job_id: str
+    start_date: date
+    end_date: date
+    error: str = None
 
 
 class DataProcHelper:

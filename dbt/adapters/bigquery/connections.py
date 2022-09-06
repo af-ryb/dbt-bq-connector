@@ -618,6 +618,13 @@ class BigQueryConnectionManager(BaseConnectionManager):
 
         self._retry_and_handle(msg="create dataset", conn=conn, fn=fn)
 
+    def list_table_partitions(self, schema, identifier):
+        """Return list of table partitions"""
+        conn = self.get_thread_connection()
+        client = conn.handle
+
+        return client.list_partitions(f'{schema}.{identifier}')
+
     def _query_and_results(
         self,
         client,
