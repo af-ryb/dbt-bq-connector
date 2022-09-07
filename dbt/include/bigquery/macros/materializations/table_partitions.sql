@@ -26,6 +26,8 @@
 
   {%- set existing = adapter.get_relation(database=database, schema=dataset_name, identifier=table_name) %}
   {%- set target_relation = api.Relation.create(database=database, schema=dataset_name, identifier=table_name, type='table') -%}
+  {%- set sql_header = config.get('sql_header', default ='') -%}
+  {%- set grant_config = config.get('grants') -%}
 
 
   {%- set run_index = get_index(selected_resources , model.unique_id) %}
@@ -62,7 +64,11 @@
 
    {{ run_hooks(pre_hooks) }}
 
-   {%- set response = (adapter.run_query(query=sql,
+    {% set sql_string =  "{}
+    {}".format(sql_header, sql)
+    -%}
+
+   {%- set response = (adapter.run_query(query=sql_string,
                                          dataset_name=dataset_name,
                                          table_name=table_name,
                                          write=write_method,
@@ -73,15 +79,19 @@
                                          job_id=job_id
                                          )) %}
 
-  {{ run_hooks(post_hooks) }}
+   {{ run_hooks(post_hooks) }}
 
    {{(adapter.update_table_description(database=database,
                                        schema=dataset_name, identifier=table_name,
-                                       description=model.description
+                                       description=model.description,
+                                       labels=config.get('labels', default=none)
                                        )
     )}}
 
   {% do persist_docs(target_relation, model) %}
+
+  {% set should_revoke = should_revoke(old_relation, full_refresh_mode=True) %}
+  {% do apply_grants(target_relation, grant_config, should_revoke) %}
 
 
   {{ store_result('main', response=response) }}

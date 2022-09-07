@@ -612,17 +612,25 @@ class BigQueryAdapter(BaseAdapter):
         conn.handle.update_table(new_table, ["schema"])
 
     @available.parse_none
-    def update_table_description(self, database: str, schema: str, identifier: str, description: str = None):
-        if not description:
+    def update_table_description(self, database: str, schema: str, identifier: str,
+                                 description: str = None, labels: dict = None):
+        if not (description or labels):
             return
-        
+
         conn = self.connections.get_thread_connection()
         client = conn.handle
 
         table_ref = self.connections.table_ref(database, schema, identifier)
         table = client.get_table(table_ref)
-        table.description = description
-        client.update_table(table, ["description"])
+
+        if description:
+            table.description = description
+            client.update_table(table, ["description"])
+
+        if labels:
+            table.labels = labels
+            client.update_table(table, ["labels"])
+
 
     @available.parse_none
     def alter_table_add_columns(self, relation, columns):
