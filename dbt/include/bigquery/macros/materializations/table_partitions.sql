@@ -79,23 +79,24 @@
                                          job_id=job_id
                                          )) %}
 
-   {{ run_hooks(post_hooks) }}
-
-   {{(adapter.update_table_description(database=database,
-                                       schema=dataset_name, identifier=table_name,
-                                       description=model.description,
-                                       labels=config.get('labels', default=none)
-                                       )
-    )}}
-
-  {% do persist_docs(target_relation, model) %}
-
-  {% set should_revoke = should_revoke(old_relation, full_refresh_mode=True) %}
-  {% do apply_grants(target_relation, grant_config, should_revoke) %}
-
-
   {{ store_result('main', response=response) }}
 
+   {%- if adapter.get_relation(database=database, schema=dataset_name, identifier=table_name) is not none %}
+       {{ run_hooks(post_hooks) }}
+
+       {{(adapter.update_table_description(database=database,
+                                           schema=dataset_name, identifier=table_name,
+                                           description=model.description,
+                                           labels=config.get('labels', default=none)
+                                           )
+        )}}
+
+      {% do persist_docs(target_relation, model) %}
+
+      {% set should_revoke = should_revoke(old_relation, full_refresh_mode=True) %}
+      {% do apply_grants(target_relation, grant_config, should_revoke) %}
+
+  {%- endif -%}
 
   {{ return({'relations': [target_relation]}) }}
 
