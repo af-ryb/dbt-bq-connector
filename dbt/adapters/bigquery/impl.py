@@ -38,7 +38,7 @@ import agate
 import json
 
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
-from datetime import date
+from datetime import date, datetime, timedelta
 from uuid import uuid4
 from pandas import date_range
 
@@ -894,6 +894,25 @@ class BigQueryAdapter(BaseAdapter):
             bytes_processed=bytes_processed,
         )
 
+    @available.parse_none
+    def date_list_range(self, start_date: date, end_date: date):
+        """Used for macro"""
+        return [(start_date+timedelta(days=day)).isoformat() for day in range((end_date - start_date).days+1)]
+
+    def list_table_partitions(self, schema, identifier):
+        """Return list of table partitions"""
+        conn = self.connections.get_thread_connection()
+        client: Client = conn.handle
+
+        return client.list_partitions(f'{schema}.{identifier}')
+
+    @available.parse_none
+    def list_table_date_partitions(self, schema, identifier):
+        """Return list of table partitions as iso format"""
+        partitions = self.list_table_partitions(schema, identifier)
+
+        return [datetime.strptime(partition, '%Y%m%d').date().isoformat() for partition in partitions]
+
     # adding as new functions in version 1.2.0m
     def delete_partitions(self, dataset_name, table_name,
                           start_date: date = None, end_date: date = None,
@@ -941,8 +960,7 @@ class BigQueryAdapter(BaseAdapter):
                       ]
 
             dates_list = list_intersection(dates_to_drop,
-                                           self.connections.list_table_partitions(schema=dataset_name,
-                                                                                  identifier=table_name))
+                                           self.list_table_partitions(schema=dataset_name, identifier=table_name))
 
             if len(dates_list) > 0:
                 send_multi_req(dates_list)
