@@ -28,10 +28,12 @@ import google.oauth2
 import google.cloud.exceptions
 import google.cloud.bigquery
 
-from google.cloud.bigquery import AccessEntry, SchemaField, Client
+from google.cloud.bigquery import AccessEntry, SchemaField, Client, Routine
 from google.cloud.bigquery.job import QueryJobConfig
 from google.cloud.bigquery.query import ScalarQueryParameter
 from google.cloud.bigquery.table import TimePartitioning
+from google.cloud.bigquery.routine import RoutineArgument
+from google.cloud import bigquery_v2
 
 import time
 import agate
@@ -287,7 +289,8 @@ class BigQueryAdapter(BaseAdapter):
         try:
             table = self.connections.get_bq_table(database, schema, identifier)
         except google.api_core.exceptions.NotFound:
-            table = None
+            table = self.get_table_func(schema, identifier)
+
         return self._bq_table_to_relation(table)
 
     # BigQuery added SQL support for 'create schema' + 'drop schema' in March 2021
@@ -977,7 +980,63 @@ class BigQueryAdapter(BaseAdapter):
         if job.state != "DONE":
             raise dbt.exceptions.RuntimeException("BigQuery Timeout Exceeded")
 
-    @available
+    @available.parse_none
+    def create_table_func(self, query: str,
+                          dataset_name: str, table_name: str,
+                          arguments: dict):
+        data_types = {'DATE': bigquery_v2.types.StandardSqlDataType.TypeKind.DATE,
+                      'FLOAT': bigquery_v2.types.StandardSqlDataType.TypeKind.FLOAT64,
+                      'TIMESTAMP': bigquery_v2.types.StandardSqlDataType.TypeKind.TIMESTAMP,
+                      'STRING': bigquery_v2.types.StandardSqlDataType.TypeKind.STRING,
+                      }
+
+        conn = self.connections.get_thread_connection()
+        client: Client = conn.handle
+
+        routine_name = f'{client.project}.{dataset_name}.{table_name}'
+
+        routine_ref = self.get_table_func(dataset_name=dataset_name, table_name=table_name)
+        if routine_ref:
+            client.delete_routine(routine_name)
+
+        route = Routine(routine_name)
+        route.type_ = 'TABLE_VALUED_FUNCTION'
+        route.body = query
+        route.arguments = [RoutineArgument(name=name, data_type=bigquery_v2.types.StandardSqlDataType(
+                           type_kind=data_types.get(data_type))) for name, data_type in arguments.items()
+                           ]
+
+        try:
+            client.create_routine(route)
+            message = None
+        except Exception as e:
+            message = str(e)
+
+        try:
+            client.get_routine(f'{client.project}.{dataset_name}.{table_name}')
+            success = True
+        except google.api_core.exceptions.NotFound:
+            success = False
+
+        return PartitionsModelResp(job_id=None,
+                                   success=success,
+                                   start_date=None,
+                                   end_date=None,
+                                   error=message if message else None
+                                   )
+
+    @available.parse_none
+    def get_table_func(self, dataset_name: str, table_name: str):
+        conn = self.connections.get_thread_connection()
+        client: Client = conn.handle
+
+        try:
+            return client.get_routine(f'{client.project}.{dataset_name}.{table_name}')
+
+        except google.api_core.exceptions.NotFound:
+            return None
+
+    @available.parse_none
     def run_query(self, query: str,
                   dataset_name: str, table_name: str,
                   start_date: date = None, end_date: date = None,
