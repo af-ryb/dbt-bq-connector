@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from dateutil.relativedelta import relativedelta
 from typing import Dict, List, Optional, Any, Set, Union, Type
 from dbt.dataclass_schema import dbtClassMixin, ValidationError
 
@@ -1090,6 +1091,21 @@ class BigQueryAdapter(BaseAdapter):
                                        end_date=end_date,
                                        error=message if job.errors else None
                                        )
+
+    @available.parse_none
+    def relative_start(self, interval):
+        start = date.today()
+        if str(interval).endswith('m'):
+            start = (date.today() + relativedelta(months=-int(str(interval).replace('m', '')))).replace(day=1)
+        elif str(interval).endswith('w'):
+            start = (date.today() + relativedelta(weeks=-int(str(interval).replace('w', ''))))
+        else:
+            try:
+                if int(interval):
+                    start = date.today() - timedelta(days=interval)
+            except ValueError:
+                pass
+        return start
 
 
 def list_intersection(lst1, lst2):

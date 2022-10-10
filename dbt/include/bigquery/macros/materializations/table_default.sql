@@ -24,8 +24,7 @@
         {%- set start_date = modules.datetime.datetime.strptime(default_start_date, '%Y-%m-%d').date() %}
 
   {%- elif var("start_date") == '@start_date' %}
-        {%- set update_range_start = update_range.get(var("run_tags"), 0) %}
-        {%- set start_date = modules.datetime.date.today()-modules.datetime.timedelta(days=update_range_start) %}
+        {%- set start_date = adapter.relative_start(update_range.get(var("run_tags"), 0)) %}
 
   {%- else %}
         {%- set start_date = modules.datetime.datetime.strptime(var("start_date"), '%Y-%m-%d').date() %}
