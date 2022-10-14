@@ -1049,7 +1049,7 @@ class BigQueryAdapter(BaseAdapter):
         job_data = build_query_config(project_id=client.project,
                                       dataset_name=dataset_name,
                                       table_name=table_name,
-                                      write=write,
+                                      write='WRITE_APPEND' if partition_by else write,
                                       partitions_field=partition_by.field if partition_by else None,
                                       partitions_type=partition_by.granularity.upper() if partition_by else None,
                                       clusters=clusters,
