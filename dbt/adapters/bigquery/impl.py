@@ -91,7 +91,7 @@ class PartitionConfig(dbtClassMixin):
             return f"{self.data_type}_trunc({column}, {self.granularity})"
 
     @classmethod
-    def parse(cls, raw_partition_by) -> Optional["PartitionConfig"]:  # type: ignore [return]
+    def parse(cls, raw_partition_by) -> Optional["PartitionConfig"]:
         if raw_partition_by is None:
             return None
         try:
@@ -1064,8 +1064,9 @@ class BigQueryAdapter(BaseAdapter):
                     message = "\n".join(error["message"].strip() for error in job.errors)
             except Exception as e:
                 return PartitionsModelResp(job_id=job_id, success=False, start_date=start_date, end_date=end_date,
-                                           error=str(e))
-            return PartitionsModelResp(job_id=job_id, success=True, start_date=start_date, end_date=end_date)
+                                           error=str(e), dry_run=dry_run)
+            return PartitionsModelResp(job_id=job_id, success=True, start_date=start_date, end_date=end_date,
+                                       dry_run=dry_run)
 
         if start_date and end_date and (write == 'WRITE_TRUNCATE' and dry_run is False and partition_by):
             self.delete_partitions(dataset_name=dataset_name,
@@ -1089,7 +1090,10 @@ class BigQueryAdapter(BaseAdapter):
                                        success=False if job.errors else True,
                                        start_date=start_date,
                                        end_date=end_date,
-                                       error=message if job.errors else None
+                                       total_bytes_billed=job.total_bytes_billed,
+                                       total_bytes_processed=job.total_bytes_processed,
+                                       error=message if job.errors else None,
+                                       dry_run=dry_run
                                        )
 
     @available.parse_none
@@ -1141,5 +1145,7 @@ class PartitionsModelResp(dbtClassMixin):
     job_id: str
     start_date: date
     end_date: date
+    total_bytes_billed: int = None
+    total_bytes_processed: int = None
+    dry_run: bool = False
     error: str = None
-
