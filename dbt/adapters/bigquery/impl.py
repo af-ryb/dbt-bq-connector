@@ -1090,10 +1090,11 @@ class BigQueryAdapter(BaseAdapter):
                                        success=False if job.errors else True,
                                        start_date=start_date,
                                        end_date=end_date,
-                                       total_bytes_billed=job.total_bytes_billed,
-                                       total_bytes_processed=job.total_bytes_processed,
                                        error=message if job.errors else None,
-                                       dry_run=dry_run
+                                       dry_run=dry_run,
+                                       total_gb_billed=job.total_bytes_billed if job.total_bytes_billed else 0 / 2**30,
+                                       estimated_gb_processed=job.estimated_bytes_processed
+                                       if job.estimated_bytes_processed else 0 / 2**30,
                                        )
 
     @available.parse_none
@@ -1145,7 +1146,7 @@ class PartitionsModelResp(dbtClassMixin):
     job_id: str
     start_date: date
     end_date: date
-    total_bytes_billed: int = None
-    total_bytes_processed: int = None
+    total_gb_billed: int = None
+    estimated_gb_processed: int = None
     dry_run: bool = False
     error: str = None
