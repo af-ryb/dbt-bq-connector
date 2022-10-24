@@ -1060,13 +1060,19 @@ class BigQueryAdapter(BaseAdapter):
         if dry_run:
             try:
                 job = client.query(query=query,  job_config=job_data)
+                job.reload()
                 if job.errors:
                     message = "\n".join(error["message"].strip() for error in job.errors)
             except Exception as e:
                 return PartitionsModelResp(job_id=job_id, success=False, start_date=start_date, end_date=end_date,
                                            error=str(e), dry_run=dry_run)
-            return PartitionsModelResp(job_id=job_id, success=True, start_date=start_date, end_date=end_date,
-                                       dry_run=dry_run)
+            return PartitionsModelResp(job_id=job_id,
+                                       success=True,
+                                       start_date=start_date, end_date=end_date,
+                                       dry_run=dry_run,
+                                       estimated_gb_processed=job.estimated_bytes_processed / 2 ** 30
+                                       if job.estimated_bytes_processed else 0,
+                                       )
 
         if start_date and end_date and (write == 'WRITE_TRUNCATE' and dry_run is False and partition_by):
             self.delete_partitions(dataset_name=dataset_name,
@@ -1092,9 +1098,9 @@ class BigQueryAdapter(BaseAdapter):
                                        end_date=end_date,
                                        error=message if job.errors else None,
                                        dry_run=dry_run,
-                                       total_gb_billed=job.total_bytes_billed if job.total_bytes_billed else 0 / 2**30,
-                                       estimated_gb_processed=job.estimated_bytes_processed
-                                       if job.estimated_bytes_processed else 0 / 2**30,
+                                       total_gb_billed=job.total_bytes_billed / 2**30 if job.total_bytes_billed else 0,
+                                       estimated_gb_processed=job.estimated_bytes_processed / 2**30
+                                       if job.estimated_bytes_processed else 0,
                                        )
 
     @available.parse_none
