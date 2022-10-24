@@ -1060,7 +1060,6 @@ class BigQueryAdapter(BaseAdapter):
         if dry_run:
             try:
                 job = client.query(query=query,  job_config=job_data)
-                job.reload()
                 if job.errors:
                     message = "\n".join(error["message"].strip() for error in job.errors)
             except Exception as e:
