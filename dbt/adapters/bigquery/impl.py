@@ -1151,7 +1151,7 @@ class PartitionsModelResp(dbtClassMixin):
     job_id: str
     start_date: date
     end_date: date
-    total_gb_billed: int = None
-    estimated_gb_processed: int = None
+    total_gb_billed: float = None
+    estimated_gb_processed: float = None
     dry_run: bool = False
     error: str = None
