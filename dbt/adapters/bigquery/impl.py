@@ -152,7 +152,6 @@ class BigqueryConfig(AdapterConfig):
 
 
 class BigQueryAdapter(BaseAdapter):
-
     RELATION_TYPES = {
         "TABLE": RelationType.Table,
         "VIEW": RelationType.View,
@@ -193,7 +192,6 @@ class BigQueryAdapter(BaseAdapter):
     def rename_relation(
         self, from_relation: BigQueryRelation, to_relation: BigQueryRelation
     ) -> None:
-
         conn = self.connections.get_thread_connection()
         client = conn.handle
 
@@ -689,7 +687,6 @@ class BigQueryAdapter(BaseAdapter):
 
     @available.parse_none
     def alter_table_add_columns(self, relation, columns):
-
         logger.debug('Adding columns ({}) to table {}".'.format(columns, relation))
 
         conn = self.connections.get_thread_connection()
