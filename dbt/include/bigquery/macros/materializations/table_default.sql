@@ -4,6 +4,7 @@
   {%- set dataset_name = config.get('schema', none) -%}
   {%- set table_name = config.get('table', default=model['alias']) -%}
   {%- set write_method = config.get('write', default='WRITE_TRUNCATE') -%}
+  {%- set cluster_by = config.get('cluster_by', none) -%}
 
   {%- set update_range = config.get('selector_update_range', default={}) -%}
   {%- set default_start_date = config.get('default_start_date', none) -%}
@@ -15,6 +16,7 @@
   {%- set grant_config = config.get('grants') -%}
 
 
+  {%- set unique_id = model.unique_id -%}
   {%- set run_index = get_index(selected_resources , model.unique_id) %}
   {% set job_id = invocation_id ~ '_' ~ run_index %}
   {{ print("Running with job_id : " ~ job_id ~ ", " ) }}
@@ -56,9 +58,11 @@
                                          dataset_name=dataset_name,
                                          table_name=table_name,
                                          write=write_method,
+                                         clusters=cluster_by,
                                          start_date=start_date, end_date=end_date,
                                          dry_run=var("dry_run"),
-                                         job_id=job_id
+                                         job_id=job_id,
+                                         unique_id=unique_id
                                          )) %}
 
    {{ store_result('main', response=response) }}

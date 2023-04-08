@@ -1000,22 +1000,14 @@ class BigQueryAdapter(BaseAdapter):
             if len(dates_list) > 0:
                 send_multi_req(dates_list)
 
-    @classmethod
-    def poll_job(cls, job, timeout):
-        retry_count = timeout
-
-        while retry_count > 0 and job.state != "DONE":
-            retry_count -= 1
-            time.sleep(1)
-            job.reload()
-
-        if job.state != "DONE":
-            raise dbt.exceptions.RuntimeException("BigQuery Timeout Exceeded")
-
     @available.parse_none
     def create_table_func(self, query: str,
                           dataset_name: str, table_name: str,
                           arguments: dict):
+        """Create bigquery table function"""
+
+        message, success = None, True
+
         data_types = {'DATE': bigquery_v2.types.StandardSqlDataType.TypeKind.DATE,
                       'FLOAT': bigquery_v2.types.StandardSqlDataType.TypeKind.FLOAT64,
                       'TIMESTAMP': bigquery_v2.types.StandardSqlDataType.TypeKind.TIMESTAMP,
@@ -1040,13 +1032,11 @@ class BigQueryAdapter(BaseAdapter):
 
         try:
             client.create_routine(route)
-            message = None
         except Exception as e:
             message = str(e)
 
         try:
             client.get_routine(f'{client.project}.{dataset_name}.{table_name}')
-            success = True
         except google.api_core.exceptions.NotFound:
             success = False
 
@@ -1076,7 +1066,8 @@ class BigQueryAdapter(BaseAdapter):
                   partition_by: Union[PartitionConfig, None] = None,
                   clusters: Union[list, None] = None,
                   dry_run: bool = False,
-                  job_id: str = None
+                  job_id: str = None,
+                  unique_id: str = None
                   ):
         """Run query from provided configuration
         Args:
@@ -1090,6 +1081,7 @@ class BigQueryAdapter(BaseAdapter):
             partition_by: config for partitions,
             clusters: list with fields name
             job_id: Optional job_id used for bigquery job_id
+            unique_id: dbt model unique_id, for post status on run start and finish query
             """
         conn = self.connections.get_thread_connection()
         client: Client = conn.handle
@@ -1135,16 +1127,13 @@ class BigQueryAdapter(BaseAdapter):
             logger.debug(f'job_id is {job_id}, timeout is {timeout}')
             job = client.query(query=query, job_config=job_data, job_id=job_id)
 
-            self.poll_job(job, timeout)
-
-            if job.errors:
-                message = "\n".join(error["message"].strip() for error in job.errors)
+            self.poll_until_job_completes(job, timeout)
 
             return PartitionsModelResp(job_id=job_id,
                                        success=False if job.errors else True,
                                        start_date=start_date,
                                        end_date=end_date,
-                                       error=message if job.errors else None,
+                                       error=job.errors if job.errors else None,
                                        dry_run=dry_run,
                                        total_gb_billed=job.total_bytes_billed / 2**30 if job.total_bytes_billed else 0,
                                        estimated_gb_processed=job.estimated_bytes_processed / 2**30
@@ -1183,13 +1172,15 @@ def build_query_config(project_id, dataset_name, table_name, write,
 
     if partitions_field:
         job_data.time_partitioning = TimePartitioning(type_=partitions_type, field=partitions_field)
-        job_data.clustering_fields = clusters
 
         if start_date and end_date:
             job_data.query_parameters = [
                 ScalarQueryParameter(type_='DATE', name='start_date', value=format(start_date)),
                 ScalarQueryParameter(type_='DATE', name='end_date', value=format(end_date)),
             ]
+
+    if clusters:
+        job_data.clustering_fields = clusters
 
     return job_data
 
