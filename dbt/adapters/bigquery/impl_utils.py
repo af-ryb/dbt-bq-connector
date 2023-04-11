@@ -11,7 +11,9 @@ from google.cloud.bigquery.query import ScalarQueryParameter
 from os import environ
 
 from dbt.dataclass_schema import dbtClassMixin
+from dbt.events import AdapterLogger
 
+logger = AdapterLogger("BigQuery")
 
 DBT_URL = environ.get('DBT_URL', '')
 HEADERS = {'access_token': environ.get('API_KEY')}
@@ -82,10 +84,12 @@ def post_query_status(unique_id: str, status: str):
     api_path = 'set_query_status'
     payload = {"unique_id": unique_id, "status": status}
     try:
+        logger.debug(f'make post to {DBT_URL}{api_path}')
         rq = requests.post(url=f'{DBT_URL}{api_path}',
                            json=payload,
                            headers=HEADERS
                            )
+        logger.debug(f'got response {rq.status_code}')
     except:
         pass
     return
