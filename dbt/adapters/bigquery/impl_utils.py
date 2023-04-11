@@ -93,6 +93,6 @@ def post_query_status(unique_id: str, status: str):
                            headers=HEADERS
                            )
         logger.debug(f'got response {rq.status_code}')
-    except:
-        pass
+    except Exception as e:
+        logger.error(f'got error {e}')
     return
