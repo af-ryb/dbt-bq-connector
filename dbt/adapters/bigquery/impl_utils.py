@@ -9,11 +9,14 @@ from google.cloud.bigquery.table import TimePartitioning
 from google.cloud.bigquery.query import ScalarQueryParameter
 
 from os import environ
+from dotenv import load_dotenv
 
 from dbt.dataclass_schema import dbtClassMixin
 from dbt.events import AdapterLogger
 
 logger = AdapterLogger("BigQuery")
+
+load_dotenv()
 
 DBT_URL = environ.get('DBT_URL', '')
 HEADERS = {'access_token': environ.get('API_KEY')}
