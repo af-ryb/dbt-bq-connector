@@ -84,6 +84,9 @@ def build_query_config(project_id, dataset_name, table_name, write,
 
 
 def post_query_status(unique_id: str, status: str):
+    if unique_id is None:
+        return
+
     api_path = 'dbt/set_query_status'
     payload = {"unique_id": unique_id, "status": status}
     try:

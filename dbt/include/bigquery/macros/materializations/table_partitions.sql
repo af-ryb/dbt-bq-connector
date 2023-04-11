@@ -28,6 +28,7 @@
   {%- set target_relation = api.Relation.create(database=database, schema=dataset_name, identifier=table_name, type='table') -%}
   {%- set sql_header = config.get('sql_header', default ='') -%}
   {%- set grant_config = config.get('grants') -%}
+  {%- set unique_id = model.unique_id -%}
 
 
   {%- set run_index = get_index(selected_resources , model.unique_id) %}
@@ -75,7 +76,8 @@
                                          clusters=cluster_by,
                                          start_date=start_date, end_date=end_date,
                                          dry_run=var("dry_run"),
-                                         job_id=job_id
+                                         job_id=job_id,
+                                         unique_id=unique_id
                                          )) %}
 
   {{ store_result('main', response=response) }}
