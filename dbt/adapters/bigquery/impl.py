@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from dateutil.relativedelta import relativedelta
+
 import threading
 from typing import Dict, List, Optional, Any, Set, Union, Type
 from dbt.dataclass_schema import dbtClassMixin, ValidationError
@@ -43,9 +43,7 @@ import google.cloud.exceptions
 import google.cloud.bigquery
 
 from google.cloud.bigquery import AccessEntry, SchemaField, Client, Routine
-from google.cloud.bigquery.job import QueryJobConfig
-from google.cloud.bigquery.query import ScalarQueryParameter
-from google.cloud.bigquery.table import TimePartitioning
+
 from google.cloud.bigquery.routine import RoutineArgument
 from google.cloud import bigquery_v2
 
@@ -56,7 +54,10 @@ import json
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from datetime import date, datetime, timedelta
 from uuid import uuid4
-from pandas import date_range
+
+from dbt.adapters.bigquery.impl_utils import (list_intersection, build_query_config, get_relative_start,
+                                              make_date_range, post_query_status,
+                                              PartitionsModelResp)
 
 logger = AdapterLogger("BigQuery")
 
@@ -989,10 +990,7 @@ class BigQueryAdapter(BaseAdapter):
             freq_format = '%Y%m' if partitioning_type == 'MONTH' else '%Y%m%d'
 
             dates_to_drop = [d.strftime(freq_format) for d in dates_to_drop] if dates_to_drop \
-                else [d.date().strftime(freq_format) for d in
-                      date_range(start_date.replace(day=1) if partitioning_type == 'MONTH' else start_date,
-                                 end_date, freq=freq).to_list()
-                      ]
+                else [d.date().strftime(freq_format) for d in make_date_range(start_date, end_date, freq)]
 
             dates_list = list_intersection(dates_to_drop,
                                            self.list_table_partitions(schema=dataset_name, identifier=table_name))
@@ -1125,9 +1123,11 @@ class BigQueryAdapter(BaseAdapter):
 
         with self.connections.exception_handler(query):
             logger.debug(f'job_id is {job_id}, timeout is {timeout}')
+            post_query_status(unique_id=unique_id, status='running')
             job = client.query(query=query, job_config=job_data, job_id=job_id)
 
             self.poll_until_job_completes(job, timeout)
+            post_query_status(unique_id=unique_id, status='done')
 
             return PartitionsModelResp(job_id=job_id,
                                        success=False if job.errors else True,
@@ -1142,56 +1142,4 @@ class BigQueryAdapter(BaseAdapter):
 
     @available.parse_none
     def relative_start(self, interval):
-        start = date.today()
-        if str(interval).endswith('m'):
-            start = (date.today() + relativedelta(months=-int(str(interval).replace('m', '')))).replace(day=1)
-        elif str(interval).endswith('w'):
-            start = (date.today() + relativedelta(weeks=-int(str(interval).replace('w', ''))))
-        else:
-            try:
-                if int(interval):
-                    start = date.today() - timedelta(days=interval)
-            except ValueError:
-                pass
-        return start
-
-
-def list_intersection(lst1, lst2):
-    lst = [value for value in lst1 if value in lst2]
-    return lst
-
-
-def build_query_config(project_id, dataset_name, table_name, write,
-                       partitions_field, partitions_type, clusters,
-                       start_date, end_date, dry_run):
-
-    job_data = QueryJobConfig()
-    job_data.write_disposition = write
-    job_data.destination = f'{project_id}.{dataset_name}.{table_name}'
-    job_data.dry_run = dry_run
-
-    if partitions_field:
-        job_data.time_partitioning = TimePartitioning(type_=partitions_type, field=partitions_field)
-
-        if start_date and end_date:
-            job_data.query_parameters = [
-                ScalarQueryParameter(type_='DATE', name='start_date', value=format(start_date)),
-                ScalarQueryParameter(type_='DATE', name='end_date', value=format(end_date)),
-            ]
-
-    if clusters:
-        job_data.clustering_fields = clusters
-
-    return job_data
-
-
-@dataclass
-class PartitionsModelResp(dbtClassMixin):
-    success: bool
-    job_id: str
-    start_date: date
-    end_date: date
-    total_gb_billed: float = None
-    estimated_gb_processed: float = None
-    dry_run: bool = False
-    error: str = None
+        return get_relative_start(interval)
