@@ -84,7 +84,7 @@ def build_query_config(project_id, dataset_name, table_name, write,
 
 
 def post_query_status(unique_id: str, status: str):
-    api_path = 'set_query_status'
+    api_path = 'dbt/set_query_status'
     payload = {"unique_id": unique_id, "status": status}
     try:
         logger.debug(f'make post to {DBT_URL}{api_path}')
