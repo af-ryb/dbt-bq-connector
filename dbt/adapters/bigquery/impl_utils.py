@@ -1,5 +1,5 @@
 import requests
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from dataclasses import dataclass
 from pandas import date_range
 from dateutil.relativedelta import relativedelta
@@ -24,14 +24,18 @@ HEADERS = {'access_token': environ.get('API_KEY')}
 
 @dataclass
 class PartitionsModelResp(dbtClassMixin):
-    success: bool
+    unique_id: str
     job_id: str
+    status: str
     start_date: date
     end_date: date
     total_gb_billed: float = None
     estimated_gb_processed: float = None
     dry_run: bool = False
+    success: bool = None
     error: str = None
+    started: datetime | None = None
+    ended: datetime | None = None
 
 
 def list_intersection(lst1, lst2):
@@ -83,19 +87,15 @@ def build_query_config(project_id, dataset_name, table_name, write,
     return job_data
 
 
-def post_query_status(unique_id: str, status: str):
-    if unique_id is None:
-        return
-
+def post_query_status(query_status: PartitionsModelResp):
     api_path = 'dbt/set_query_status'
-    payload = {"unique_id": unique_id, "status": status}
+
     try:
         logger.debug(f'make post to {DBT_URL}{api_path}')
-        rq = requests.post(url=f'{DBT_URL}{api_path}',
-                           json=payload,
-                           headers=HEADERS
-                           )
-        logger.debug(f'got response {rq.status_code}')
+        requests.post(url=f'{DBT_URL}{api_path}',
+                      json=query_status.to_dict(),
+                      headers=HEADERS
+                      )
     except Exception as e:
         logger.error(f'got error {e}')
     return

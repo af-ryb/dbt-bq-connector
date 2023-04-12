@@ -998,6 +998,18 @@ class BigQueryAdapter(BaseAdapter):
             if len(dates_list) > 0:
                 send_multi_req(dates_list)
 
+    @classmethod
+    def poll_job(cls, job, timeout):
+        retry_count = timeout
+
+        while retry_count > 0 and job.state != "DONE":
+            retry_count -= 1
+            time.sleep(1)
+            job.reload()
+
+        if job.state != "DONE":
+            raise dbt.exceptions.RuntimeException("BigQuery Timeout Exceeded")
+
     @available.parse_none
     def create_table_func(self, query: str,
                           dataset_name: str, table_name: str,
@@ -1097,20 +1109,34 @@ class BigQueryAdapter(BaseAdapter):
                                       )
 
         if dry_run:
-            post_query_status(unique_id=unique_id, status='running')
+            post_query_status(PartitionsModelResp(unique_id=unique_id,
+                                                  job_id=job_id,
+                                                  status='running',
+                                                  start_date=start_date,
+                                                  end_date=end_date,
+                                                  dry_run=dry_run,
+                                                  )
+                              )
             job = client.query(query=query,  job_config=job_data)
-            post_query_status(unique_id=unique_id, status='done')
+            resp = PartitionsModelResp(unique_id=unique_id,
+                                       job_id=job_id,
+                                       status='done',
+                                       success=False if job.errors else True,
+                                       start_date=start_date,
+                                       end_date=end_date,
+                                       error=str(job.errors) if job.errors else None,
+                                       dry_run=dry_run,
+                                       estimated_gb_processed=job.estimated_bytes_processed / 2**30
+                                       if job.estimated_bytes_processed else 0,
+                                       started=job.started,
+                                       ended=job.ended,
+                                       )
+            post_query_status(query_status=resp)
             if job.errors:
                 message = "\n".join(error["message"].strip() for error in job.errors)
                 raise dbt.exceptions.DbtRuntimeError(message)
 
-            return PartitionsModelResp(job_id=job_id,
-                                       success=True,
-                                       start_date=start_date, end_date=end_date,
-                                       dry_run=dry_run,
-                                       estimated_gb_processed=job.estimated_bytes_processed / 2 ** 30
-                                       if job.estimated_bytes_processed else 0,
-                                       )
+            return resp
 
         if start_date and end_date and (write == 'WRITE_TRUNCATE' and dry_run is False and partition_by):
             self.delete_partitions(dataset_name=dataset_name,
@@ -1122,23 +1148,37 @@ class BigQueryAdapter(BaseAdapter):
         timeout = self.connections.get_job_execution_timeout_seconds(conn) or 300
 
         with self.connections.exception_handler(query):
-            logger.debug(f'job_id is {job_id}, timeout is {timeout}')
-            post_query_status(unique_id=unique_id, status='running')
+            post_query_status(PartitionsModelResp(unique_id=unique_id,
+                                                  job_id=job_id,
+                                                  status='running',
+                                                  start_date=start_date,
+                                                  end_date=end_date,
+                                                  dry_run=dry_run,
+                                                  )
+                              )
             job = client.query(query=query, job_config=job_data, job_id=job_id)
 
-            self.poll_until_job_completes(job, timeout)
-            post_query_status(unique_id=unique_id, status='done')
-
-            return PartitionsModelResp(job_id=job_id,
+            self.poll_job(job, timeout)
+            resp = PartitionsModelResp(unique_id=unique_id,
+                                       job_id=job_id,
+                                       status='done',
                                        success=False if job.errors else True,
                                        start_date=start_date,
                                        end_date=end_date,
-                                       error=job.errors if job.errors else None,
+                                       error=str(job.errors) if job.errors else None,
                                        dry_run=dry_run,
                                        total_gb_billed=job.total_bytes_billed / 2**30 if job.total_bytes_billed else 0,
                                        estimated_gb_processed=job.estimated_bytes_processed / 2**30
                                        if job.estimated_bytes_processed else 0,
+                                       started=job.started,
+                                       ended=job.ended,
                                        )
+            post_query_status(query_status=resp)
+            if job.errors:
+                message = "\n".join(error["message"].strip() for error in job.errors)
+                raise dbt.exceptions.DbtRuntimeError(message)
+
+            return resp
 
     @available.parse_none
     def relative_start(self, interval):
