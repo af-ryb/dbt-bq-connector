@@ -1165,7 +1165,7 @@ class BigQueryAdapter(BaseAdapter):
                                        success=False if job.errors else True,
                                        start_date=start_date,
                                        end_date=end_date,
-                                       error="\n".join(error.strip() for error in job.errors.get("message")),
+                                       error="\n".join(error["message"].strip() for error in job.errors) if job.errors else None,
                                        dry_run=dry_run,
                                        total_gb_billed=job.total_bytes_billed / 2**30 if job.total_bytes_billed else 0,
                                        estimated_gb_processed=job.estimated_bytes_processed / 2**30
