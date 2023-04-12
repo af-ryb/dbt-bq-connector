@@ -1133,8 +1133,7 @@ class BigQueryAdapter(BaseAdapter):
                                        )
             post_query_status(query_status=resp)
             if job.errors:
-                message = "\n".join(error["message"].strip() for error in job.errors)
-                raise dbt.exceptions.DbtRuntimeError(message)
+                raise dbt.exceptions.DbtRuntimeError(str(job.errors))
 
             return resp
 
@@ -1175,8 +1174,7 @@ class BigQueryAdapter(BaseAdapter):
                                        )
             post_query_status(query_status=resp)
             if job.errors:
-                message = "\n".join(error["message"].strip() for error in job.errors)
-                raise dbt.exceptions.DbtRuntimeError(message)
+                raise dbt.exceptions.DbtRuntimeError(str(job.errors))
 
             return resp
 

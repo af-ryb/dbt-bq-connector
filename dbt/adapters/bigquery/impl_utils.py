@@ -91,7 +91,7 @@ def post_query_status(query_status: PartitionsModelResp):
     api_path = 'dbt/set_query_status'
 
     try:
-        logger.debug(f'make post to {DBT_URL}{api_path}')
+        logger.debug(f'make post to {DBT_URL}{api_path}, with payload {PartitionsModelResp}')
         requests.post(url=f'{DBT_URL}{api_path}',
                       json=query_status.to_dict(),
                       headers=HEADERS
