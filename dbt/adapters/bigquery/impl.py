@@ -1097,17 +1097,12 @@ class BigQueryAdapter(BaseAdapter):
                                       )
 
         if dry_run:
-            try:
-                post_query_status(unique_id=unique_id, status='running')
-                job = client.query(query=query,  job_config=job_data)
-                post_query_status(unique_id=unique_id, status='done')
-                if job.errors:
-                    message = "\n".join(error["message"].strip() for error in job.errors)
-                    raise dbt.exceptions.DbtRuntimeError(message)
-
-            except Exception as e:
-                return PartitionsModelResp(job_id=job_id, success=False, start_date=start_date, end_date=end_date,
-                                           error=str(e), dry_run=dry_run)
+            post_query_status(unique_id=unique_id, status='running')
+            job = client.query(query=query,  job_config=job_data)
+            post_query_status(unique_id=unique_id, status='done')
+            if job.errors:
+                message = "\n".join(error["message"].strip() for error in job.errors)
+                raise dbt.exceptions.DbtRuntimeError(message)
 
             return PartitionsModelResp(job_id=job_id,
                                        success=True,
