@@ -1109,6 +1109,7 @@ class BigQueryAdapter(BaseAdapter):
                                       )
 
         if dry_run:
+            error_message = None
             post_query_status(PartitionsModelResp(unique_id=unique_id,
                                                   job_id=job_id,
                                                   status='running',
@@ -1117,23 +1118,23 @@ class BigQueryAdapter(BaseAdapter):
                                                   dry_run=dry_run,
                                                   )
                               )
-            job = client.query(query=query,  job_config=job_data)
+            try:
+                job = client.query(query=query,  job_config=job_data)
+            except Exception as e:
+                error_message = str(e)
+
             resp = PartitionsModelResp(unique_id=unique_id,
                                        job_id=job_id,
                                        status='done',
-                                       success=False if job.errors else True,
+                                       success=False if error_message else True,
                                        start_date=start_date,
                                        end_date=end_date,
-                                       error=str(job.errors) if job.errors else None,
+                                       error=error_message,
                                        dry_run=dry_run,
-                                       estimated_gb_processed=job.estimated_bytes_processed / 2**30
-                                       if job.estimated_bytes_processed else 0,
-                                       started=job.started,
-                                       ended=job.ended,
                                        )
             post_query_status(query_status=resp)
-            if job.errors:
-                raise dbt.exceptions.DbtRuntimeError(str(job.errors))
+            if error_message:
+                raise dbt.exceptions.DbtRuntimeError(error_message)
 
             return resp
 
@@ -1164,7 +1165,7 @@ class BigQueryAdapter(BaseAdapter):
                                        success=False if job.errors else True,
                                        start_date=start_date,
                                        end_date=end_date,
-                                       error=str(job.errors) if job.errors else None,
+                                       error="\n".join(error.strip() for error in job.errors.get("message")),
                                        dry_run=dry_run,
                                        total_gb_billed=job.total_bytes_billed / 2**30 if job.total_bytes_billed else 0,
                                        estimated_gb_processed=job.estimated_bytes_processed / 2**30
@@ -1174,7 +1175,8 @@ class BigQueryAdapter(BaseAdapter):
                                        )
             post_query_status(query_status=resp)
             if job.errors:
-                raise dbt.exceptions.DbtRuntimeError(str(job.errors))
+                message = "\n".join(error.strip() for error in job.errors.get("message"))
+                raise dbt.exceptions.DbtRuntimeError(message)
 
             return resp
 
