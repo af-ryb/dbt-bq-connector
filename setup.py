@@ -58,8 +58,8 @@ def _dbt_core_version(plugin_version: str) -> str:
 
 
 package_name = "dbt-bigquery"
-package_version = "1.5.0b4"
-dbt_core_version = "1.5.0b5"
+package_version = "1.5.0m"
+dbt_core_version = _dbt_core_version(_dbt_bigquery_version())
 description = """The BigQuery adapter plugin for dbt"""
 
 setup(
@@ -74,7 +74,7 @@ setup(
     packages=find_namespace_packages(include=["dbt", "dbt.*"]),
     include_package_data=True,
     install_requires=[
-        f"dbt-core==1.5.0b5",
+        f"dbt-core~={_dbt_core_version(_dbt_bigquery_version())}",
         "google-cloud-bigquery~=3.0",
         "google-cloud-storage~=2.4",
         "google-cloud-dataproc~=5.0",
