@@ -29,8 +29,9 @@ class PartitionsModelResp(dbtClassMixin):
     status: str
     start_date: date
     end_date: date
-    total_gb_billed: float = None
-    estimated_gb_processed: float = None
+    bytes_billed: int = None
+    bytes_processed: int = None
+    slot_ms: int = None
     dry_run: bool = False
     success: bool = None
     error: str = None

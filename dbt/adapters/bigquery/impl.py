@@ -1167,9 +1167,9 @@ class BigQueryAdapter(BaseAdapter):
                                        end_date=end_date,
                                        error="\n".join(error["message"].strip() for error in job.errors) if job.errors else None,
                                        dry_run=dry_run,
-                                       total_gb_billed=job.total_bytes_billed / 2**30 if job.total_bytes_billed else 0,
-                                       estimated_gb_processed=job.estimated_bytes_processed / 2**30
-                                       if job.estimated_bytes_processed else 0,
+                                       bytes_billed=self.connections.format_bytes(job.total_bytes_billed),
+                                       bytes_processed=self.connections.format_bytes(job.estimated_bytes_processed),
+                                       slot_ms=job.slot_millis,
                                        started=job.started,
                                        ended=job.ended,
                                        )
