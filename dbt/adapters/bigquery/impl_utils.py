@@ -27,8 +27,8 @@ class PartitionsModelResp(dbtClassMixin):
     unique_id: str
     job_id: str
     status: str
-    start_date: date
-    end_date: date
+    start_date: date | None = None
+    end_date: date | None = None
     bytes_billed: int = None
     bytes_processed: int = None
     slot_ms: int = None

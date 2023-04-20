@@ -1046,7 +1046,8 @@ class BigQueryAdapter(BaseAdapter):
     @available.parse_none
     def create_table_func(self, query: str,
                           dataset_name: str, table_name: str,
-                          arguments: dict):
+                          arguments: dict,
+                          unique_id: str = None):
         """Create bigquery table function"""
 
         message, success = None, True
@@ -1083,10 +1084,12 @@ class BigQueryAdapter(BaseAdapter):
         except google.api_core.exceptions.NotFound:
             success = False
 
-        return PartitionsModelResp(job_id=None,
+        return PartitionsModelResp(job_id=str(uuid4()),
+                                   unique_id=unique_id,
                                    success=success,
                                    start_date=None,
                                    end_date=None,
+                                   status='done',
                                    error=message if message else None
                                    )
 
