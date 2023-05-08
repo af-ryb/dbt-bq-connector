@@ -713,13 +713,18 @@ class BigQueryAdapter(BaseAdapter):
         table = client.get_table(table_ref)
 
         if description:
-            table.description = description
-            client.update_table(table, ["description"])
+            try:
+                table.description = description
+                client.update_table(table, ["description"])
+            except Exception as e:
+                logger.error(f'Error while update description {e}')
 
         if labels:
-            table.labels = labels
-            client.update_table(table, ["labels"])
-
+            try:
+                table.labels = labels
+                client.update_table(table, ["labels"])
+            except Exception as e:
+                logger.error(f'Error while update labels {e}')
 
     @available.parse_none
     def alter_table_add_columns(self, relation, columns):
