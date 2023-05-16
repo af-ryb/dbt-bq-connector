@@ -46,10 +46,9 @@ import google.oauth2
 import google.cloud.exceptions
 import google.cloud.bigquery
 
-from google.cloud.bigquery import AccessEntry, SchemaField, Client, Routine
+from google.cloud.bigquery import AccessEntry, SchemaField, Client, Routine, StandardSqlDataType, StandardSqlTypeNames
 
 from google.cloud.bigquery.routine import RoutineArgument
-from google.cloud import bigquery_v2
 
 import time
 import agate
@@ -1057,10 +1056,10 @@ class BigQueryAdapter(BaseAdapter):
 
         message, success = None, True
 
-        data_types = {'DATE': bigquery_v2.types.StandardSqlDataType.TypeKind.DATE,
-                      'FLOAT': bigquery_v2.types.StandardSqlDataType.TypeKind.FLOAT64,
-                      'TIMESTAMP': bigquery_v2.types.StandardSqlDataType.TypeKind.TIMESTAMP,
-                      'STRING': bigquery_v2.types.StandardSqlDataType.TypeKind.STRING,
+        data_types = {'DATE': StandardSqlDataType(StandardSqlTypeNames.DATE),
+                      'FLOAT': StandardSqlDataType(StandardSqlTypeNames.FLOAT64),
+                      'TIMESTAMP': StandardSqlDataType(StandardSqlTypeNames.TIMESTAMP),
+                      'STRING': StandardSqlDataType(StandardSqlTypeNames.STRING),
                       }
 
         conn = self.connections.get_thread_connection()
@@ -1075,8 +1074,8 @@ class BigQueryAdapter(BaseAdapter):
         route = Routine(routine_name)
         route.type_ = 'TABLE_VALUED_FUNCTION'
         route.body = query
-        route.arguments = [RoutineArgument(name=name, data_type=bigquery_v2.types.StandardSqlDataType(
-                           type_kind=data_types.get(data_type))) for name, data_type in arguments.items()
+        route.arguments = [RoutineArgument(name=name, data_type=data_types.get(data_type))
+                           for name, data_type in arguments.items()
                            ]
 
         try:
