@@ -2,7 +2,11 @@ from dataclasses import dataclass
 import threading
 from typing import Dict, List, Optional, Any, Set, Union, Type
 
-from dbt.contracts.graph.nodes import ColumnLevelConstraint, ModelLevelConstraint, ConstraintType
+from dbt.contracts.graph.nodes import (
+    ColumnLevelConstraint,
+    ModelLevelConstraint,
+    ConstraintType,
+)
 from dbt.dataclass_schema import dbtClassMixin, ValidationError
 
 import dbt.deprecations
@@ -23,6 +27,7 @@ from dbt.adapters.base import (
 
 from dbt.adapters.cache import _make_ref_key_dict
 
+from dbt.adapters.bigquery.column import get_nested_column_data_types
 from dbt.adapters.bigquery.relation import BigQueryRelation
 from dbt.adapters.bigquery.dataset import add_access_entry_to_dataset
 from dbt.adapters.bigquery import BigQueryColumn
@@ -150,7 +155,11 @@ class GrantTarget(dbtClassMixin):
 
 def _stub_relation(*args, **kwargs):
     return BigQueryRelation.create(
-        database="", schema="", identifier="", quote_policy={}, type=BigQueryRelation.Table
+        database="",
+        schema="",
+        identifier="",
+        quote_policy={},
+        type=BigQueryRelation.Table,
     )
 
 
@@ -271,10 +280,21 @@ class BigQueryAdapter(BaseAdapter):
             return False
         return True
 
+    @available.parse(lambda *a, **k: {})
+    @classmethod
+    def nest_column_data_types(
+        cls,
+        columns: Dict[str, Dict[str, Any]],
+        constraints: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Dict[str, str]]:
+        return get_nested_column_data_types(columns, constraints)
+
     def get_columns_in_relation(self, relation: BigQueryRelation) -> List[BigQueryColumn]:
         try:
             table = self.connections.get_bq_table(
-                database=relation.database, schema=relation.schema, identifier=relation.identifier
+                database=relation.database,
+                schema=relation.schema,
+                identifier=relation.identifier,
             )
             return self._get_dbt_columns_from_bq_table(table)
 
@@ -446,7 +466,10 @@ class BigQueryAdapter(BaseAdapter):
 
         logger.debug("Model SQL ({}):\n{}".format(model_alias, model_code))
         self.connections.create_view(
-            database=model_database, schema=model_schema, table_name=model_alias, sql=model_code
+            database=model_database,
+            schema=model_schema,
+            table_name=model_alias,
+            sql=model_code,
         )
         return "CREATE VIEW"
 
@@ -467,7 +490,10 @@ class BigQueryAdapter(BaseAdapter):
 
         logger.debug("Model SQL ({}):\n{}".format(table_name, model_sql))
         self.connections.create_table(
-            database=model_database, schema=model_schema, table_name=table_name, sql=model_sql
+            database=model_database,
+            schema=model_schema,
+            table_name=table_name,
+            sql=model_sql,
         )
 
         return "CREATE TABLE"
@@ -498,7 +524,10 @@ class BigQueryAdapter(BaseAdapter):
         """
         _, iterator = self.connections.raw_execute(sql)
         columns = [self.Column.create_from_field(field) for field in iterator.schema]
-        return columns
+        flattened_columns = []
+        for column in columns:
+            flattened_columns += column.flatten()
+        return flattened_columns
 
     @available.parse(lambda *a, **k: False)
     def get_columns_in_select_sql(self, select_sql: str) -> List[BigQueryColumn]:
@@ -628,7 +657,9 @@ class BigQueryAdapter(BaseAdapter):
 
         try:
             table = self.connections.get_bq_table(
-                database=relation.database, schema=relation.schema, identifier=relation.identifier
+                database=relation.database,
+                schema=relation.schema,
+                identifier=relation.identifier,
             )
         except google.cloud.exceptions.NotFound:
             return True
@@ -668,8 +699,8 @@ class BigQueryAdapter(BaseAdapter):
         if dotted_column_name in dbt_columns:
             column_config = dbt_columns[dotted_column_name]
             bq_column_dict["description"] = column_config.get("description")
-            bq_column_dict["policyTags"] = {"names": column_config.get("policy_tags", list())}
-
+            if bq_column_dict["type"] != "RECORD":
+                bq_column_dict["policyTags"] = {"names": column_config.get("policy_tags", list())}
         new_fields = []
         for child_col_dict in bq_column_dict.get("fields", list()):
             new_child_column_dict = self._update_column_dict(
@@ -762,7 +793,12 @@ class BigQueryAdapter(BaseAdapter):
 
     @available.parse_none
     def upload_file(
-        self, local_file_path: str, database: str, table_schema: str, table_name: str, **kwargs
+        self,
+        local_file_path: str,
+        database: str,
+        table_schema: str,
+        table_name: str,
+        **kwargs,
     ) -> None:
         conn = self.connections.get_thread_connection()
         client = conn.handle
@@ -945,6 +981,31 @@ class BigQueryAdapter(BaseAdapter):
             "cluster": ClusterDataprocHelper,
             "serverless": ServerlessDataProcHelper,
         }
+
+    @available
+    @classmethod
+    def render_raw_columns_constraints(cls, raw_columns: Dict[str, Dict[str, Any]]) -> List:
+        rendered_constraints: Dict[str, str] = {}
+        for raw_column in raw_columns.values():
+            for con in raw_column.get("constraints", None):
+                constraint = cls._parse_column_constraint(con)
+                rendered_constraint = cls.process_parsed_constraint(
+                    constraint, cls.render_column_constraint
+                )
+
+                if rendered_constraint:
+                    column_name = raw_column["name"]
+                    if column_name not in rendered_constraints:
+                        rendered_constraints[column_name] = rendered_constraint
+                    else:
+                        rendered_constraints[column_name] += f" {rendered_constraint}"
+
+        nested_columns = cls.nest_column_data_types(raw_columns, rendered_constraints)
+        rendered_column_constraints = [
+            f"{cls.quote(column['name']) if column.get('quote') else column['name']} {column['data_type']}"
+            for column in nested_columns.values()
+        ]
+        return rendered_column_constraints
 
     @classmethod
     def render_column_constraint(cls, constraint: ColumnLevelConstraint) -> Optional[str]:
