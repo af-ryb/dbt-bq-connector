@@ -1,9 +1,10 @@
 import pytest
-from dbt.tests.util import relation_from_name
 from dbt.tests.adapter.constraints.test_constraints import (
     BaseTableConstraintsColumnsEqual,
     BaseViewConstraintsColumnsEqual,
     BaseIncrementalConstraintsColumnsEqual,
+    BaseTableContractSqlHeader,
+    BaseIncrementalContractSqlHeader,
     BaseConstraintsRuntimeDdlEnforcement,
     BaseConstraintsRollback,
     BaseIncrementalConstraintsRuntimeDdlEnforcement,
@@ -23,6 +24,7 @@ from dbt.tests.adapter.constraints.fixtures import (
     my_model_with_quoted_column_name_sql,
     model_schema_yml,
     constrained_model_schema_yml,
+    model_contract_header_schema_yml,
     model_quoted_column_schema_yml,
     model_fk_constraint_schema_yml,
     my_model_wrong_order_depends_on_fk_sql,
@@ -80,8 +82,39 @@ as (
 # - does not support a data type named 'text' (TODO handle this via type translation/aliasing!)
 constraints_yml = model_schema_yml.replace("text", "string")
 model_constraints_yml = constrained_model_schema_yml.replace("text", "string")
+model_contract_header_schema_yml = model_contract_header_schema_yml.replace("text", "string")
 model_fk_constraint_schema_yml = model_fk_constraint_schema_yml.replace("text", "string")
 constrained_model_schema_yml = constrained_model_schema_yml.replace("text", "string")
+
+my_model_contract_sql_header_sql = """
+{{
+  config(
+    materialized = "table"
+  )
+}}
+
+{% call set_sql_header(config) %}
+DECLARE DEMO STRING DEFAULT 'hello world';
+{% endcall %}
+
+SELECT DEMO as column_name
+"""
+
+my_model_incremental_contract_sql_header_sql = """
+{{
+  config(
+    materialized = "incremental",
+    on_schema_change="append_new_columns"
+  )
+}}
+
+{% call set_sql_header(config) %}
+DECLARE DEMO STRING DEFAULT 'hello world';
+{% endcall %}
+
+SELECT DEMO as column_name
+"""
+
 
 class BigQueryColumnEqualSetup:
     @pytest.fixture
@@ -96,7 +129,7 @@ class BigQueryColumnEqualSetup:
     def data_types(self, int_type, string_type):
         # sql_column_value, schema_data_type, error_data_type
         return [
-            ['1', int_type, int_type],
+            ["1", int_type, int_type],
             ["'1'", string_type, string_type],
             ["cast('2019-01-01' as date)", "date", "DATE"],
             ["true", "bool", "BOOL"],
@@ -109,8 +142,7 @@ class BigQueryColumnEqualSetup:
 
 
 class TestBigQueryTableConstraintsColumnsEqual(
-    BigQueryColumnEqualSetup,
-    BaseTableConstraintsColumnsEqual
+    BigQueryColumnEqualSetup, BaseTableConstraintsColumnsEqual
 ):
     @pytest.fixture(scope="class")
     def models(self):
@@ -122,8 +154,7 @@ class TestBigQueryTableConstraintsColumnsEqual(
 
 
 class TestBigQueryViewConstraintsColumnsEqual(
-    BigQueryColumnEqualSetup,
-    BaseViewConstraintsColumnsEqual
+    BigQueryColumnEqualSetup, BaseViewConstraintsColumnsEqual
 ):
     @pytest.fixture(scope="class")
     def models(self):
@@ -135,8 +166,7 @@ class TestBigQueryViewConstraintsColumnsEqual(
 
 
 class TestBigQueryIncrementalConstraintsColumnsEqual(
-    BigQueryColumnEqualSetup,
-    BaseIncrementalConstraintsColumnsEqual
+    BigQueryColumnEqualSetup, BaseIncrementalConstraintsColumnsEqual
 ):
     @pytest.fixture(scope="class")
     def models(self):
@@ -144,6 +174,24 @@ class TestBigQueryIncrementalConstraintsColumnsEqual(
             "my_model_wrong_order.sql": my_model_incremental_wrong_order_sql,
             "my_model_wrong_name.sql": my_model_incremental_wrong_name_sql,
             "constraints_schema.yml": constraints_yml,
+        }
+
+
+class TestBigQueryTableContractsSqlHeader(BaseTableContractSqlHeader):
+    @pytest.fixture(scope="class")
+    def models(self):
+        return {
+            "my_model_contract_sql_header.sql": my_model_contract_sql_header_sql,
+            "constraints_schema.yml": model_contract_header_schema_yml,
+        }
+
+
+class TestBigQueryIncrementalContractsSqlHeader(BaseIncrementalContractSqlHeader):
+    @pytest.fixture(scope="class")
+    def models(self):
+        return {
+            "my_model_contract_sql_header.sql": my_model_incremental_contract_sql_header_sql,
+            "constraints_schema.yml": model_contract_header_schema_yml,
         }
 
 
@@ -243,6 +291,7 @@ class TestBigQueryTableConstraintsRollback(BaseConstraintsRollback):
     def expected_error_messages(self):
         return ["Required field id cannot be null"]
 
+
 class TestBigQueryIncrementalConstraintsRuntimeDdlEnforcement(
     BaseIncrementalConstraintsRuntimeDdlEnforcement
 ):
@@ -259,9 +308,7 @@ class TestBigQueryIncrementalConstraintsRuntimeDdlEnforcement(
         return _expected_sql_bigquery
 
 
-class TestBigQueryIncrementalConstraintsRollback(
-    BaseIncrementalConstraintsRollback
-):
+class TestBigQueryIncrementalConstraintsRollback(BaseIncrementalConstraintsRollback):
     @pytest.fixture(scope="class")
     def models(self):
         return {
@@ -275,7 +322,6 @@ class TestBigQueryIncrementalConstraintsRollback(
 
 
 class TestBigQueryModelConstraintsRuntimeEnforcement(BaseModelConstraintsRuntimeEnforcement):
-
     @pytest.fixture(scope="class")
     def models(self):
         return {
