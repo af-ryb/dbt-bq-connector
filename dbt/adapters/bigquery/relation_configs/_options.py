@@ -18,6 +18,7 @@ class BigQueryOptionsConfig(BigQueryBaseRelationConfig):
     """
 
     enable_refresh: Optional[bool] = True
+    allow_non_incremental_definition: Optional[bool] = True
     refresh_interval_minutes: Optional[float] = 30
     expiration_timestamp: Optional[datetime] = None
     max_staleness: Optional[str] = None
@@ -54,6 +55,7 @@ class BigQueryOptionsConfig(BigQueryBaseRelationConfig):
 
         option_formatters = {
             "enable_refresh": boolean,
+            "allow_non_incremental_definition": boolean,
             "refresh_interval_minutes": numeric,
             "expiration_timestamp": interval,
             "max_staleness": interval,
@@ -81,6 +83,7 @@ class BigQueryOptionsConfig(BigQueryBaseRelationConfig):
     def from_dict(cls, config_dict: Dict[str, Any]) -> "BigQueryOptionsConfig":
         setting_formatters = {
             "enable_refresh": bool_setting,
+            "allow_non_incremental_definition": bool_setting,
             "refresh_interval_minutes": float_setting,
             "expiration_timestamp": None,
             "max_staleness": None,
@@ -111,6 +114,7 @@ class BigQueryOptionsConfig(BigQueryBaseRelationConfig):
             option: model_node.config.extra.get(option)
             for option in [
                 "enable_refresh",
+                "allow_non_incremental_definition",
                 "refresh_interval_minutes",
                 "expiration_timestamp",
                 "max_staleness",
