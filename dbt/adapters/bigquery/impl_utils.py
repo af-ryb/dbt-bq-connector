@@ -19,7 +19,7 @@ logger = AdapterLogger("BigQuery")
 load_dotenv()
 
 DBT_URL = environ.get('DBT_URL', '')
-HEADERS = {'access_token': environ.get('API_KEY')}
+HEADERS = {'X-API-KEY': environ.get('API_KEY')}
 
 
 @dataclass
