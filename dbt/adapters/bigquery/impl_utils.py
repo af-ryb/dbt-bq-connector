@@ -34,7 +34,7 @@ class PartitionsModelResp(dbtClassMixin):
     slot_ms: int = None
     dry_run: bool = False
     success: bool = None
-    error: str = None
+    error: str | None = None
     started: datetime | None = None
     ended: datetime | None = None
 
