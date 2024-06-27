@@ -38,7 +38,7 @@ import google.api_core
 import google.auth
 import google.oauth2
 import google.cloud.bigquery
-from google.cloud.bigquery import AccessEntry, SchemaField, Table as BigQueryTable
+from google.cloud.bigquery import Table as BigQueryTable
 import google.cloud.exceptions
 import pytz
 
@@ -1201,7 +1201,7 @@ class BigQueryAdapter(BaseAdapter):
                                        )
             post_query_status(query_status=resp)
             if error_message:
-                raise dbt.exceptions.DbtRuntimeError(error_message)
+                raise dbt_common.exceptions.DbtRuntimeError(error_message)
 
             return resp
 

@@ -11,8 +11,8 @@ from google.cloud.bigquery.query import ScalarQueryParameter
 from os import environ
 from dotenv import load_dotenv
 
-from dbt.dataclass_schema import dbtClassMixin
-from dbt.events import AdapterLogger
+from dbt_common.dataclass_schema import dbtClassMixin
+from dbt.adapters.events.logging import AdapterLogger
 
 logger = AdapterLogger("BigQuery")
 

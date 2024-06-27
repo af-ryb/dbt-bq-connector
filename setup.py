@@ -53,7 +53,9 @@ setup(
         "dbt-common>=1.0.4,<2.0",
         "dbt-adapters>=1.1.1,<2.0",
         # 3.20 introduced pyarrow>=3.0 under the `pandas` extra
-        "google-cloud-bigquery[pandas]>=3.0,<4.0",
+        "google-cloud-bigquery>=3.0,<4.0",
+        "pandas==1.5.3",
+        "numpy==1.26.4",
         "google-cloud-storage~=2.4",
         "google-cloud-dataproc~=5.0",
         # ----
