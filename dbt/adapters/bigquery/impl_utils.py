@@ -92,11 +92,13 @@ def post_query_status(query_status: PartitionsModelResp):
     api_path = 'dbt/set_query_status'
 
     try:
-        logger.debug(f'make post to {DBT_URL}{api_path}, with payload {PartitionsModelResp}')
-        requests.post(url=f'{DBT_URL}{api_path}',
-                      json=query_status.to_dict(),
-                      headers=HEADERS
-                      )
+        logger.debug(f'dbt_connector, make post to {DBT_URL}{api_path}, with payload {query_status}')
+        rq = requests.post(url=f'{DBT_URL}{api_path}',
+                           json=query_status.to_dict(),
+                           headers=HEADERS
+                           )
+        error = rq.json() if rq.status_code != 200 else None
+        logger.debug(f'dbt_connector, got {rq.status_code}, error {error}')
     except Exception as e:
         logger.error(f'got error {e}')
     return
