@@ -1,17 +1,41 @@
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
 import json
-import threading
+from datetime import date, datetime, timedelta
 from multiprocessing.context import SpawnContext
+import threading
+from typing import (
+    Any,
+    Dict,
+    FrozenSet,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    TYPE_CHECKING,
+    Type,
+    Set,
+    Union,
+)
 
-import time
-from typing import Any, Dict, List, Optional, Type, Set, Union, FrozenSet, Tuple, Iterable
+import google.api_core
+import google.auth
+import google.oauth2
+import google.cloud.bigquery
+from google.cloud.bigquery import AccessEntry, Client, SchemaField, Table as BigQueryTable
+import google.cloud.exceptions
+import pytz
 
-import agate
-from dbt.adapters.contracts.relation import RelationConfig
-
+from dbt_common.contracts.constraints import (
+    ColumnLevelConstraint,
+    ConstraintType,
+    ModelLevelConstraint,
+)
+from dbt_common.dataclass_schema import dbtClassMixin
+from dbt_common.events.functions import fire_event
+import dbt_common.exceptions
 import dbt_common.exceptions.base
-from dbt.adapters.base import (  # type: ignore
+from dbt_common.utils import filter_null_values
+from dbt.adapters.base import (
     AdapterConfig,
     BaseAdapter,
     BaseRelation,
@@ -22,29 +46,16 @@ from dbt.adapters.base import (  # type: ignore
     available,
 )
 from dbt.adapters.base.impl import FreshnessResponse
-from dbt.adapters.cache import _make_ref_key_dict  # type: ignore
+from dbt.adapters.cache import _make_ref_key_dict
 from dbt.adapters.capability import Capability, CapabilityDict, CapabilitySupport, Support
-import dbt_common.clients.agate_helper
 from dbt.adapters.contracts.connection import AdapterResponse
 from dbt.adapters.contracts.macros import MacroResolverProtocol
-from dbt_common.contracts.constraints import ColumnLevelConstraint, ConstraintType, ModelLevelConstraint  # type: ignore
-from dbt_common.dataclass_schema import dbtClassMixin
+from dbt.adapters.contracts.relation import RelationConfig
 from dbt.adapters.events.logging import AdapterLogger
-from dbt_common.events.functions import fire_event
 from dbt.adapters.events.types import SchemaCreation, SchemaDrop
-import dbt_common.exceptions
-from dbt_common.utils import filter_null_values
-import google.api_core
-import google.auth
-import google.oauth2
-import google.cloud.bigquery
-from google.cloud.bigquery import Table as BigQueryTable
-import google.cloud.exceptions
-import pytz
 
-from dbt.adapters.bigquery import BigQueryColumn, BigQueryConnectionManager
-from dbt.adapters.bigquery.column import get_nested_column_data_types
-from dbt.adapters.bigquery.connections import BigQueryAdapterResponse
+from dbt.adapters.bigquery.column import BigQueryColumn, get_nested_column_data_types
+from dbt.adapters.bigquery.connections import BigQueryAdapterResponse, BigQueryConnectionManager
 from dbt.adapters.bigquery.dataset import add_access_entry_to_dataset, is_access_entry_in_dataset
 from dbt.adapters.bigquery.python_submissions import (
     ClusterDataprocHelper,
@@ -60,6 +71,11 @@ from dbt.adapters.bigquery.utility import sql_escape
 from google.cloud.bigquery import AccessEntry, SchemaField, Client, Routine, StandardSqlDataType, StandardSqlTypeNames
 
 from google.cloud.bigquery.routine import RoutineArgument
+
+if TYPE_CHECKING:
+    # Indirectly imported via agate_helper, which is lazy loaded further downfile.
+    # Used by mypy for earlier type hints.
+    import agate
 
 
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
@@ -86,12 +102,6 @@ class GrantTarget(dbtClassMixin):
 
     def render(self):
         return f"{self.project}.{self.dataset}"
-
-
-def _stub_relation(*args, **kwargs):
-    return BigQueryRelation.create(
-        database="", schema="", identifier="", quote_policy={}, type=BigQueryRelation.Table
-    )
 
 
 @dataclass
@@ -156,10 +166,10 @@ class BigQueryAdapter(BaseAdapter):
 
     @classmethod
     def is_cancelable(cls) -> bool:
-        return False
+        return True
 
     def drop_relation(self, relation: BigQueryRelation) -> None:
-        is_cached = self._schema_is_cached(relation.database, relation.schema)  # type: ignore[arg-type]
+        is_cached = self._schema_is_cached(relation.database, relation.schema)
         if is_cached:
             self.cache_dropped(relation)
 
@@ -254,7 +264,7 @@ class BigQueryAdapter(BaseAdapter):
         )
         return columns
 
-    def expand_column_types(self, goal: BigQueryRelation, current: BigQueryRelation) -> None:  # type: ignore[override]
+    def expand_column_types(self, goal: BigQueryRelation, current: BigQueryRelation) -> None:
         # This is a no-op on BigQuery
         pass
 
@@ -320,7 +330,7 @@ class BigQueryAdapter(BaseAdapter):
     # TODO: the code below is copy-pasted from SQLAdapter.create_schema. Is there a better way?
     def create_schema(self, relation: BigQueryRelation) -> None:
         # use SQL 'create schema'
-        relation = relation.without_identifier()  # type: ignore
+        relation = relation.without_identifier()
 
         fire_event(SchemaCreation(relation=_make_ref_key_dict(relation)))
         kwargs = {
@@ -345,32 +355,34 @@ class BigQueryAdapter(BaseAdapter):
         return "`{}`".format(identifier)
 
     @classmethod
-    def convert_text_type(cls, agate_table: agate.Table, col_idx: int) -> str:
+    def convert_text_type(cls, agate_table: "agate.Table", col_idx: int) -> str:
         return "string"
 
     @classmethod
-    def convert_number_type(cls, agate_table: agate.Table, col_idx: int) -> str:
+    def convert_number_type(cls, agate_table: "agate.Table", col_idx: int) -> str:
+        import agate
+
         decimals = agate_table.aggregate(agate.MaxPrecision(col_idx))  # type: ignore[attr-defined]
         return "float64" if decimals else "int64"
 
     @classmethod
-    def convert_integer_type(cls, agate_table: agate.Table, col_idx: int) -> str:
+    def convert_integer_type(cls, agate_table: "agate.Table", col_idx: int) -> str:
         return "int64"
 
     @classmethod
-    def convert_boolean_type(cls, agate_table: agate.Table, col_idx: int) -> str:
+    def convert_boolean_type(cls, agate_table: "agate.Table", col_idx: int) -> str:
         return "bool"
 
     @classmethod
-    def convert_datetime_type(cls, agate_table: agate.Table, col_idx: int) -> str:
+    def convert_datetime_type(cls, agate_table: "agate.Table", col_idx: int) -> str:
         return "datetime"
 
     @classmethod
-    def convert_date_type(cls, agate_table: agate.Table, col_idx: int) -> str:
+    def convert_date_type(cls, agate_table: "agate.Table", col_idx: int) -> str:
         return "date"
 
     @classmethod
-    def convert_time_type(cls, agate_table: agate.Table, col_idx: int) -> str:
+    def convert_time_type(cls, agate_table: "agate.Table", col_idx: int) -> str:
         return "time"
 
     ###
@@ -398,14 +410,14 @@ class BigQueryAdapter(BaseAdapter):
         return columns
 
     def _agate_to_schema(
-        self, agate_table: agate.Table, column_override: Dict[str, str]
+        self, agate_table: "agate.Table", column_override: Dict[str, str]
     ) -> List[SchemaField]:
         """Convert agate.Table with column names to a list of bigquery schemas."""
         bq_schema = []
         for idx, col_name in enumerate(agate_table.column_names):
             inferred_type = self.convert_agate_type(agate_table, idx)
             type_ = column_override.get(col_name, inferred_type)
-            bq_schema.append(SchemaField(col_name, type_))  # type: ignore[arg-type]
+            bq_schema.append(SchemaField(col_name, type_))
         return bq_schema
 
     @available.parse(lambda *a, **k: "")
@@ -451,22 +463,6 @@ class BigQueryAdapter(BaseAdapter):
         except (ValueError, google.cloud.exceptions.NotFound) as e:
             logger.debug("get_columns_in_select_sql error: {}".format(e))
             return []
-
-    @classmethod
-    def poll_until_job_completes(cls, job, timeout):
-        retry_count = timeout
-
-        while retry_count > 0 and job.state != "DONE":
-            retry_count -= 1
-            time.sleep(1)
-            job.reload()
-
-        if job.state != "DONE":
-            raise dbt_common.exceptions.DbtRuntimeError("BigQuery Timeout Exceeded")
-
-        elif job.error_result:
-            message = "\n".join(error["message"].strip() for error in job.errors)
-            raise dbt_common.exceptions.DbtRuntimeError(message)
 
     def _bq_table_to_relation(self, bq_table) -> Union[BigQueryRelation, None]:
         if bq_table is None:
@@ -679,51 +675,57 @@ class BigQueryAdapter(BaseAdapter):
         client.update_table(new_table, ["schema"])
 
     @available.parse_none
-    def load_dataframe(self, database, schema, table_name, agate_table, column_override):
-        bq_schema = self._agate_to_schema(agate_table, column_override)
-        conn = self.connections.get_thread_connection()
-        client = conn.handle
+    def load_dataframe(
+        self,
+        database: str,
+        schema: str,
+        table_name: str,
+        agate_table: "agate.Table",
+        column_override: Dict[str, str],
+        field_delimiter: str,
+    ) -> None:
+        connection = self.connections.get_thread_connection()
+        client: Client = connection.handle
+        table_schema = self._agate_to_schema(agate_table, column_override)
+        file_path = agate_table.original_abspath  # type: ignore
 
-        table_ref = self.connections.table_ref(database, schema, table_name)
-
-        load_config = google.cloud.bigquery.LoadJobConfig()
-        load_config.skip_leading_rows = 1
-        load_config.schema = bq_schema
-
-        with open(agate_table.original_abspath, "rb") as f:
-            job = client.load_table_from_file(f, table_ref, rewind=True, job_config=load_config)
-
-        timeout = self.connections.get_job_execution_timeout_seconds(conn) or 300
-        with self.connections.exception_handler("LOAD TABLE"):
-            self.poll_until_job_completes(job, timeout)
+        self.connections.write_dataframe_to_table(
+            client,
+            file_path,
+            database,
+            schema,
+            table_name,
+            table_schema,
+            field_delimiter,
+            fallback_timeout=300,
+        )
 
     @available.parse_none
     def upload_file(
-        self, local_file_path: str, database: str, table_schema: str, table_name: str, **kwargs
+        self,
+        local_file_path: str,
+        database: str,
+        table_schema: str,
+        table_name: str,
+        **kwargs,
     ) -> None:
-        conn = self.connections.get_thread_connection()
-        client = conn.handle
+        connection = self.connections.get_thread_connection()
+        client: Client = connection.handle
 
-        table_ref = self.connections.table_ref(database, table_schema, table_name)
-
-        load_config = google.cloud.bigquery.LoadJobConfig()
-        for k, v in kwargs["kwargs"].items():
-            if k == "schema":
-                setattr(load_config, k, json.loads(v))
-            else:
-                setattr(load_config, k, v)
-
-        with open(local_file_path, "rb") as f:
-            job = client.load_table_from_file(f, table_ref, rewind=True, job_config=load_config)
-
-        timeout = self.connections.get_job_execution_timeout_seconds(conn) or 300
-        with self.connections.exception_handler("LOAD TABLE"):
-            self.poll_until_job_completes(job, timeout)
+        self.connections.write_file_to_table(
+            client,
+            local_file_path,
+            database,
+            table_schema,
+            table_name,
+            fallback_timeout=300,
+            **kwargs,
+        )
 
     @classmethod
     def _catalog_filter_table(
-        cls, table: agate.Table, used_schemas: FrozenSet[Tuple[str, str]]
-    ) -> agate.Table:
+        cls, table: "agate.Table", used_schemas: FrozenSet[Tuple[str, str]]
+    ) -> "agate.Table":
         table = table.rename(
             column_names={col.name: col.name.replace("__", ":") for col in table.columns}
         )
@@ -737,8 +739,8 @@ class BigQueryAdapter(BaseAdapter):
         for candidate, schemas in candidates.items():
             database = candidate.database
             if database not in db_schemas:
-                db_schemas[database] = set(self.list_schemas(database))  # type: ignore[index]
-            if candidate.schema in db_schemas[database]:  # type: ignore[index]
+                db_schemas[database] = set(self.list_schemas(database))
+            if candidate.schema in db_schemas[database]:
                 result[candidate] = schemas
             else:
                 logger.debug(
@@ -754,7 +756,7 @@ class BigQueryAdapter(BaseAdapter):
         macro_resolver: Optional[MacroResolverProtocol] = None,
     ) -> Tuple[Optional[AdapterResponse], FreshnessResponse]:
         conn = self.connections.get_thread_connection()
-        client: google.cloud.bigquery.Client = conn.handle
+        client: Client = conn.handle
 
         table_ref = self.get_table_ref_from_relation(source)
         table = client.get_table(table_ref)
@@ -845,7 +847,7 @@ class BigQueryAdapter(BaseAdapter):
         return None
 
     @available.parse_none
-    def grant_access_to(self, entity, entity_type, role, grant_target_dict):
+    def grant_access_to(self, entity, entity_type, role, grant_target_dict) -> None:
         """
         Given an entity, grants it access to a dataset.
         """
@@ -874,7 +876,7 @@ class BigQueryAdapter(BaseAdapter):
         dataset = client.get_dataset(dataset_ref)
         return dataset.location
 
-    def get_rows_different_sql(  # type: ignore[override]
+    def get_rows_different_sql(
         self,
         relation_a: BigQueryRelation,
         relation_b: BigQueryRelation,
@@ -922,7 +924,7 @@ class BigQueryAdapter(BaseAdapter):
             return list(res)
 
     def generate_python_submission_response(self, submission_result) -> BigQueryAdapterResponse:
-        return BigQueryAdapterResponse(_message="OK")  # type: ignore[call-arg]
+        return BigQueryAdapterResponse(_message="OK")
 
     @property
     def default_python_submission_method(self) -> str:
@@ -962,7 +964,7 @@ class BigQueryAdapter(BaseAdapter):
 
     @classmethod
     def render_column_constraint(cls, constraint: ColumnLevelConstraint) -> Optional[str]:
-        c = super().render_column_constraint(constraint)  # type: ignore
+        c = super().render_column_constraint(constraint)
         if (
             constraint.type == ConstraintType.primary_key
             or constraint.type == ConstraintType.foreign_key
@@ -972,7 +974,7 @@ class BigQueryAdapter(BaseAdapter):
 
     @classmethod
     def render_model_constraint(cls, constraint: ModelLevelConstraint) -> Optional[str]:
-        c = super().render_model_constraint(constraint)  # type: ignore
+        c = super().render_model_constraint(constraint)
         if (
             constraint.type == ConstraintType.primary_key
             or constraint.type == ConstraintType.foreign_key
