@@ -1214,7 +1214,7 @@ class BigQueryAdapter(BaseAdapter):
                                    )
 
         job_id = job_id if job_id else 'dbt_' + str(uuid4())
-        timeout = self.connections.get_job_execution_timeout_seconds(conn) or 300
+        timeout = self.connections._retry.create_job_execution_timeout(fallback=300)
 
         with self.connections.exception_handler(query):
             post_query_status(PartitionsModelResp(unique_id=unique_id,
