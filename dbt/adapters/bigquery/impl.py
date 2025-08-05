@@ -1226,7 +1226,7 @@ class BigQueryAdapter(BaseAdapter):
                                                   dry_run=dry_run,
                                                   )
                               )
-            job = client.query(query=query, job_config=job_data, job_id=job_id)
+            job = client.query(query=query, job_config=job_data, job_id=job_id, job_retry=None)
 
             self.poll_job(job, timeout)
             resp = PartitionsModelResp(unique_id=unique_id,
